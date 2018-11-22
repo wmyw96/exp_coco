@@ -45,8 +45,8 @@ docs = []
 files = os.listdir(dataset_path)
 
 corpus = []
-#corpus_size = 4000
-corpus_size = 3000
+corpus_size = 4000
+#corpus_size = 3000
 
 for i in range(corpus_size):
     corpus.append([])
@@ -193,22 +193,27 @@ def main():
                                               model.label: a_label,
                                               model.is_training: False, model.n_decay: n_decay})
                     pred = np.argmax(pred, 1)
-                    kmdist, _ = KM_match(tr, gt)
+                    ans = np.argmax(a_label, 1)
+                    #kmdist, _ = KM_match(tr, gt)
                     print("[+] Global Step %08d =>" % global_step,
                           " G loss     : {:.8f}".format(g_loss),
                           " w          : {:.8f}".format(w),
                           " gp         : {:.8f}".format(gp),
                           " Accuracy   : {:.8f}".format(acc),
                           " L2 norm    : {:.8f}".format(mse),
-                          " KM dist    : {:.8f}".format(kmdist))
+                          " KM dist    : {:.8f}".format(0.0))
                     mses = []
+                    cm = np.zeros((nlabels, nlabels))
+                    for u in range(train_step['seq_len']):
+                        cm[ans[u]][pred[u]] += 1
+                    print(cm)
 
                 global_step += 1
 
             d_a, d_a2b = [], []
 
-            if args.model == 'nodop':
-                continue
+            #if args.model == 'nodop':
+            #    continue
             
             print('[+] Supervised Shuffling, A->B ...')
 
@@ -230,7 +235,7 @@ def main():
                         mycnt += 2.0
                         cm[u_gt[k * 2], u_fs[k * 2]] += 1
                         cm[u_gt[k * 2 + 1], u_fs[k * 2 + 1]] += 1
-
+            print(cm)
             myjoint /= mycnt
             print(np.sum(myjoint))
 
@@ -247,58 +252,60 @@ def main():
                 for x in range(nlabels):
                     for y in range(nlabels):
                         cur_se += np.abs(
-                            mytrans[x, y] - myweight[perm[x], perm[y]])
+                            myjoint[x, y] - myweight[perm[x], perm[y]])
                 if cur_se < best_se:
                     best_se = cur_se
                     solution = [perm[k] for k in range(nlabels)]
             print('Discrete Optimization Solution')
             print(solution)
 
-            for miter in range(100):
-                gta, _ = sample_image_seq(horizon)
-                tb, pd, bd = s.run(
-                    [model.a2b, model.pred, model.embeddings],
-                    feed_dict={model.image: gta,
-                               model.is_training: False})
+            for mm in range(10):
+                d_a, d_a2b = [], []
+                for miter in range(10):
+                    gta, _ = sample_image_seq(horizon)
+                    tb, pd, bd = s.run(
+                        [model.a2b, model.pred, model.embeddings],
+                        feed_dict={model.image: gta,
+                                   model.is_training: False})
                 
-                pred_idx = np.argmax(pd, 1)
-                gt_idx = np.argmax(_, 1)
+                    pred_idx = np.argmax(pd, 1)
+                    gt_idx = np.argmax(_, 1)
 
-                for k in range(horizon):
-                    reord_label[k] = solution[pred_idx[k]]
+                    for k in range(horizon):
+                        reord_label[k] = solution[pred_idx[k]]
 
-                acc_o = sum([pred_idx[k] == gt_idx[k] for k in range(horizon)])
-                acc_r = sum([reord_label[k] == gt_idx[k]
-                             for k in range(horizon)])
-                if miter == 0:
-                    print('Origin Acc {}, Reordered Acc {}, '.
-                          format(acc_o, acc_r))
+                    acc_o = sum([pred_idx[k] == gt_idx[k] for k in range(horizon)])
+                    acc_r = sum([reord_label[k] == gt_idx[k]
+                                 for k in range(horizon)])
+                    if miter == 0:
+                        print('Origin Acc {}, Reordered Acc {}, '.
+                              format(acc_o, acc_r))
 
-                gtab = np.zeros((horizon, nlabels))
-                for k in range(horizon):
-                    gtab[k, reord_label[k]] = 1.0
+                    gtab = np.zeros((horizon, nlabels))
+                    for k in range(horizon):
+                        gtab[k, reord_label[k]] = 1.0
 
-                d_a.append(gta)
-                d_a2b.append(gtab)
+                    d_a.append(gta)
+                    d_a2b.append(gtab)
 
-            decay = 1.0
-            for k in range(2000):
-                idx = np.random.randint(100)
-                img, lb = sample_image_seq(train_step['seq_len'])
-                n_decay = max((20000 - global_step + 0.0) / 20000, 0) * 0.5 + 0.5
-                _, ls_ssp = \
-                    s.run([model.gs_op, model.g_super_loss],
-                          feed_dict={model.image: d_a[idx],
-                                     model.label: lb,
-                                     model.olabel: d_a2b[idx],
-                                     model.lr_decay: decay,
-                                     model.is_training: True,
-                                     model.n_decay: n_decay})
-                if k % 100 == 0:
-                    decay *= 0.8
-                if k % 100 == 0:
-                    print('[+] Supervised Shuffling, MSE Loss = {}'.
-                          format(ls_ssp))
+                decay = 1.0
+                for k in range(200):
+                    idx = np.random.randint(10)
+                    img, lb = sample_image_seq(train_step['seq_len'])
+                    n_decay = max((20000 - global_step + 0.0) / 20000, 0) * 0.5 + 0.5
+                    _, ls_ssp = \
+                        s.run([model.gs_op, model.g_super_loss],
+                              feed_dict={model.image: d_a[idx],
+                                         model.label: lb,
+                                         model.olabel: d_a2b[idx],
+                                         model.lr_decay: decay,
+                                         model.is_training: True,
+                                         model.n_decay: n_decay})
+                    if k % 100 == 0:
+                        decay *= 0.8
+                    if k % 100 == 0:
+                        print('[+] Supervised Shuffling, MSE Loss = {}'.
+                              format(ls_ssp))
 
     # Close tf.Session
     s.close()

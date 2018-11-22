@@ -103,11 +103,14 @@ class UniMappingGAN:
             reuse = False
         with tf.variable_scope('generator-%s' % name, reuse=reuse):
             is_training = self.is_training
-            ndf = 64
+            ndf = 32
             lc_x = tf.layers.conv2d(x, ndf, 4, strides=(2, 2),
                                     padding='same', use_bias=False)
             lc_x = tf.nn.relu(lc_x)
             lc_x = tf.layers.conv2d(lc_x, ndf * 2, 4, strides=(2, 2),
+                                    padding='same', use_bias=False)
+            lc_x = tf.nn.relu(lc_x)
+            lc_x = tf.layers.conv2d(lc_x, ndf * 4, 4, strides=(2, 2),
                                     padding='same', use_bias=False)
             lc_x = tf.nn.relu(lc_x)
             lc_x = tf.layers.conv2d(lc_x, ndf * 4, 4, strides=(2, 2),
@@ -119,7 +122,7 @@ class UniMappingGAN:
             lc_x = tf.nn.relu(lc_x)
 
             print(lc_x.get_shape())
-            lc_x = tf.reshape(lc_x, [-1, ndf * 8 * 5 * 5])
+            lc_x = tf.reshape(lc_x, [-1, ndf * 8 * 1 * 1])
 
             out = tf.layers.dense(lc_x, self.embed_dim, activation=tf.nn.tanh)
             return out
